@@ -2094,6 +2094,26 @@ let api = function Binance( options = {} ) {
      * @param {object} data - user data callback data type
      * @return {undefined}
      */
+    const userIsolatedDataHandler = data => {
+        let type = data.e;
+        if ( type === 'outboundAccountInfo' ) {
+            // XXX: Deprecated in 2020-09-08
+        } else if ( type === 'executionReport' ) {
+            if ( Binance.options.isolated_execution_callback ) Binance.options.isolated_execution_callback( data );
+        } else if ( type === 'listStatus' ) {
+            if ( Binance.options.isolated_list_status_callback ) Binance.options.isolated_list_status_callback( data );
+        } else if ( type === 'outboundAccountPosition' || type === 'balanceUpdate' ) {
+            Binance.options.isolated_balance_callback( data );
+        } else {
+            Binance.options.log( 'Unexpected userIsolatedData: ' + type );
+        }
+    };
+
+    /**
+     * Used as part of the user data websockets callback
+     * @param {object} data - user data callback data type
+     * @return {undefined}
+     */
     const userFutureDataHandler = data => {
         let type = data.e;
         if ( type === 'MARGIN_CALL' ) {
@@ -2964,7 +2984,7 @@ let api = function Binance( options = {} ) {
         * @param {function} callback - the callback function
         * @return {promise or undefined} - omitting the callback returns a promise
         */
-       marketSell: function ( symbol, quantity, flags = { type: 'MARKET' }, callback = false ) {
+        marketSell: function ( symbol, quantity, flags = { type: 'MARKET' }, callback = false ) {
             if ( typeof flags === 'function' ) { // Accept callback as third parameter
                 callback = flags;
                 flags = { type: 'MARKET' };
@@ -3096,6 +3116,30 @@ let api = function Binance( options = {} ) {
                 } )
             } else {
                 signedRequest( base + 'v3/openOrders', { symbol }, callback, 'DELETE' );
+            }
+        },
+
+        /**
+         * Cancels all margin orders of a given symbol
+         * @param {string} symbol - the symbol to cancel all orders for
+         * @param {function} callback - the callback function
+         * @param {string} isIsolated - the isolate margin option
+         * @return {promise or undefined} - omitting the callback returns a promise
+         */
+        mgCancelAll: function ( symbol, callback = false, isIsolated = 'FALSE' ) {
+            if ( !callback ) {
+                return new Promise( ( resolve, reject ) => {
+                    callback = ( error, response ) => {
+                        if ( error ) {
+                            reject( error );
+                        } else {
+                            resolve( response );
+                        }
+                    }
+                    signedRequest( sapi + 'v1/margin/openOrders', { symbol, isIsolated }, callback, 'DELETE' );
+                } )
+            } else {
+                signedRequest( sapi + 'v1/margin/openOrders', { symbol, isIsolated }, callback, 'DELETE' );
             }
         },
 
@@ -4522,14 +4566,31 @@ let api = function Binance( options = {} ) {
         /**
          * Cancels an order
          * @param {string} symbol - the symbol to cancel
-         * @param {string} orderid - the orderid to cancel
+         * @param {string} orderId - the orderId to cancel
          * @param {function} callback - the callback function
+         * @param {string} isIsolated - is isolated symbol
          * @return {undefined}
          */
-        mgCancel: function ( symbol, orderid, callback = false,isIsolated='FALSE') {
-            signedRequest( sapi + 'v1/margin/order', { symbol: symbol, orderId: orderid,isIsolated }, function ( error, data ) {
-                if ( callback ) return callback.call( this, error, data, symbol );
-            }, 'DELETE' );
+        mgCancel: function ( symbol, orderId, callback = false, isIsolated = 'FALSE' ) {
+            const params = { symbol, orderId, isIsolated };
+            if ( !callback ) {
+                return new Promise( ( resolve, reject ) => {
+                    callback = ( error, response ) => {
+                        if ( error ) {
+                            reject( error );
+                        } else {
+                            resolve( response );
+                        }
+                    }
+                    signedRequest( sapi + 'v1/margin/order', params, function ( error, data ) {
+                        return callback.call( this, error, data, symbol );
+                    }, 'DELETE' );
+                } )
+            } else {
+                signedRequest( sapi + 'v1/margin/order', params, function ( error, data ) {
+                    return callback.call( this, error, data, symbol );
+                }, 'DELETE' );
+            }
         },
 
         /**
@@ -4724,12 +4785,30 @@ let api = function Binance( options = {} ) {
          * Get maximum transfer-out amount of an asset
          * @param {string} asset - the asset
          * @param {function} callback - the callback function
+         * @param {string} isolatedSymbol - isolated symbol
          * @return {undefined}
          */
-        maxTransferable: function ( asset, callback ) {
-            signedRequest( sapi + 'v1/margin/maxTransferable', { asset: asset }, function( error, data ) {
-                if( callback ) return callback( error, data );
-            } );
+        maxTransferable: function ( asset, callback, isolatedSymbol ) {
+            const parameters = { asset };
+            isolatedSymbol && Object.assign( parameters, { isolatedSymbol } );
+            if ( !callback ) {
+                return new Promise( ( resolve, reject ) => {
+                    callback = ( error, response ) => {
+                        if ( error ) {
+                            reject( error );
+                        } else {
+                            resolve( response );
+                        }
+                    }
+                    signedRequest( sapi + 'v1/margin/maxTransferable', parameters, function( error, data ) {
+                        return callback.call( this, error, data );
+                    } );
+                } )
+            } else {
+                signedRequest( sapi + 'v1/margin/maxTransferable', parameters, function( error, data ) {
+                    return callback.call( this, error, data );
+                } );
+            }
         },
 
         /**
@@ -4808,23 +4887,56 @@ let api = function Binance( options = {} ) {
          * @param {boolean} isIsolated - the callback function
          * @return {undefined}
          */
-        mgAccount: function( callback ,isIsolated = false) {
-            let endpoint = 'v1/margin';
-	        endpoint += (isIsolated)?'/isolated':'' + '/account';
-            signedRequest( sapi + endpoint, {}, function( error, data ) {
-                if( callback ) return callback( error, data );
-            } );
+        mgAccount: function( callback, isIsolated = false ) {
+            const endpoint = `v1/margin${ isIsolated ? '/isolated' : '' }/account`;
+            if ( !callback ) {
+                return new Promise( ( resolve, reject ) => {
+                    callback = ( error, response ) => {
+                        if ( error ) {
+                            reject( error );
+                        } else {
+                            resolve( response );
+                        }
+                    }
+                    signedRequest( sapi + endpoint, {}, function( error, data ) {
+                        return callback.call( this, error, data );
+                    } );
+                } )
+            } else {
+                signedRequest( sapi + endpoint, {}, function( error, data ) {
+                    return callback.call( this, error, data );
+                } );
+            }
         },
+
         /**
          * Get maximum borrow amount of an asset
          * @param {string} asset - the asset
          * @param {function} callback - the callback function
+         * @param {string} isolatedSymbol - isolated symbol
          * @return {undefined}
          */
-        maxBorrowable: function ( asset, callback ) {
-            signedRequest( sapi + 'v1/margin/maxBorrowable', { asset: asset }, function( error, data ) {
-                if( callback ) return callback( error, data );
-            } );
+        maxBorrowable: function ( asset, callback, isolatedSymbol ) {
+            const parameters = { asset };
+            isolatedSymbol && Object.assign( parameters, { isolatedSymbol } );
+            if ( !callback ) {
+                return new Promise( ( resolve, reject ) => {
+                    callback = ( error, response ) => {
+                        if ( error ) {
+                            reject( error );
+                        } else {
+                            resolve( response );
+                        }
+                    }
+                    signedRequest( sapi + 'v1/margin/maxBorrowable', parameters, function( error, data ) {
+                        return callback.call( this, error, data );
+                    } );
+                } )
+            } else {
+                signedRequest( sapi + 'v1/margin/maxBorrowable', parameters, function( error, data ) {
+                    return callback.call( this, error, data );
+                } );
+            }
         },
 
         // Futures WebSocket Functions:
@@ -5347,7 +5459,7 @@ let api = function Binance( options = {} ) {
                         }
                     }, 60 * 30 * 1000 ); // 30 minute keepalive
                     Binance.options.balance_callback = callback;
-                    Binance.options.execution_callback = execution_callback ? callback : execution_callback;//This change is required to listen for Orders
+                    Binance.options.execution_callback = execution_callback;
                     Binance.options.list_status_callback = list_status_callback;
                     const subscription = subscribe( Binance.options.listenKey, userDataHandler, reconnect );
                     if ( subscribed_callback ) subscribed_callback( subscription.endpoint );
@@ -5382,6 +5494,39 @@ let api = function Binance( options = {} ) {
                     Binance.options.margin_execution_callback = execution_callback;
                     Binance.options.margin_list_status_callback = list_status_callback;
                     const subscription = subscribe( Binance.options.listenMarginKey, userMarginDataHandler, reconnect );
+                    if ( subscribed_callback ) subscribed_callback( subscription.endpoint );
+                }, 'POST' );
+            },
+
+            /**
+             * Isolated Userdata websockets function
+             * @param {string} symbol - the symbol to listen
+             * @param {function} callback - the callback function
+             * @param {function} execution_callback - optional execution callback
+             * @param {function} subscribed_callback - subscription callback
+             * @param {function} list_status_callback - status callback
+             * @return {undefined}
+             */
+            userIsolatedData: function userIsolatedData( symbol, callback, execution_callback = false, subscribed_callback = false, list_status_callback = false ) {
+                let reconnect = () => {
+                    if ( Binance.options.reconnect ) userIsolatedData( symbol, callback, execution_callback, subscribed_callback );
+                };
+                apiRequest( sapi + 'v1/userDataStream/isolated', { symbol }, function ( error, response ) {
+                    Binance.options.listenIsolatedKey = response.listenKey;
+                    setTimeout( function userDataKeepAlive() { // keepalive
+                        try {
+                            apiRequest( sapi + 'v1/userDataStream/isolated?symbol=' + symbol + '&listenKey=' + Binance.options.listenIsolatedKey, {}, function ( err ) {
+                                if ( err ) setTimeout( userDataKeepAlive, 60000 ); // retry in 1 minute
+                                else setTimeout( userDataKeepAlive, 60 * 30 * 1000 ); // 30 minute keepalive
+                            }, 'PUT' );
+                        } catch ( error ) {
+                            setTimeout( userDataKeepAlive, 60000 ); // retry in 1 minute
+                        }
+                    }, 60 * 30 * 1000 ); // 30 minute keepalive
+                    Binance.options.isolated_balance_callback = callback;
+                    Binance.options.isolated_execution_callback = execution_callback;
+                    Binance.options.isolated_list_status_callback = list_status_callback;
+                    const subscription = subscribe( Binance.options.listenIsolatedKey, userIsolatedDataHandler, reconnect );
                     if ( subscribed_callback ) subscribed_callback( subscription.endpoint );
                 }, 'POST' );
             },
