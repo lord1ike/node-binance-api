@@ -4509,8 +4509,21 @@ let api = function Binance( options = {} ) {
          * @param {string} isIsolated - the isolate margin option
          * @return {undefined}
          */
-        mgBuy: function ( symbol, quantity, price, flags = {}, callback = false,isIsolated='FALSE'  ) {
-            marginOrder( 'BUY', symbol, quantity, price, {...flags,isIsolated}, callback );
+        mgBuy: function ( symbol, quantity, price, flags = {}, callback = false, isIsolated = 'FALSE' ) {
+            if ( !callback ) {
+                return new Promise( ( resolve, reject ) => {
+                    callback = ( error, response ) => {
+                        if ( error ) {
+                            reject( error );
+                        } else {
+                            resolve( response );
+                        }
+                    }
+                    marginOrder( 'BUY', symbol, quantity, price, { ...flags, isIsolated }, callback );
+                } )
+            } else {
+                marginOrder( 'BUY', symbol, quantity, price, { ...flags, isIsolated }, callback );
+            }
         },
 
         /**
@@ -4523,8 +4536,21 @@ let api = function Binance( options = {} ) {
          * @param {string} isIsolated - the isolate margin option
          * @return {undefined}
          */
-        mgSell: function ( symbol, quantity, price, flags = {}, callback = false,isIsolated='FALSE'  ) {
-            marginOrder( 'SELL', symbol, quantity, price, {...flags,isIsolated}, callback );
+        mgSell: function ( symbol, quantity, price, flags = {}, callback = false, isIsolated = 'FALSE'  ) {
+            if ( !callback ) {
+                return new Promise( ( resolve, reject ) => {
+                    callback = ( error, response ) => {
+                        if ( error ) {
+                            reject( error );
+                        } else {
+                            resolve( response );
+                        }
+                    }
+                    marginOrder( 'SELL', symbol, quantity, price, { ...flags, isIsolated }, callback );
+                } )
+            } else {
+                marginOrder( 'SELL', symbol, quantity, price, { ...flags, isIsolated }, callback );
+            }
         },
 
         /**
