@@ -2063,7 +2063,7 @@ let api = function Binance( options = {} ) {
         } else if ( type === 'listStatus' ) {
             if ( Binance.options.list_status_callback ) Binance.options.list_status_callback( data );
         } else if ( type === 'outboundAccountPosition' || type === 'balanceUpdate' ) {
-            Binance.options.balance_callback( data );
+            if ( Binance.options.balance_callback ) Binance.options.balance_callback( data );
         } else {
             Binance.options.log( 'Unexpected userData: ' + type );
         }
@@ -2083,7 +2083,7 @@ let api = function Binance( options = {} ) {
         } else if ( type === 'listStatus' ) {
             if ( Binance.options.margin_list_status_callback ) Binance.options.margin_list_status_callback( data );
         } else if ( type === 'outboundAccountPosition' || type === 'balanceUpdate' ) {
-            Binance.options.margin_balance_callback( data );
+            if ( Binance.options.margin_balance_callback ) Binance.options.margin_balance_callback( data );
         } else {
             Binance.options.log( 'Unexpected userMarginData: ' + type );
         }
@@ -2103,7 +2103,7 @@ let api = function Binance( options = {} ) {
         } else if ( type === 'listStatus' ) {
             if ( Binance.options.isolated_list_status_callback ) Binance.options.isolated_list_status_callback( data );
         } else if ( type === 'outboundAccountPosition' || type === 'balanceUpdate' ) {
-            Binance.options.isolated_balance_callback( data );
+            if ( Binance.options.isolated_balance_callback ) Binance.options.isolated_balance_callback( data );
         } else {
             Binance.options.log( 'Unexpected userIsolatedData: ' + type );
         }
