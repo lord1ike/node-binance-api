@@ -68,6 +68,7 @@ let api = function Binance( options = {} ) {
         hedgeMode: false,
         localAddress: false,
         family: false,
+        isolated: {},
         log: function ( ...args ) {
             console.log( Array.prototype.slice.call( args ) );
         }
@@ -102,6 +103,7 @@ let api = function Binance( options = {} ) {
         if ( typeof Binance.options.keepAlive === 'undefined' ) Binance.options.keepAlive = default_options.keepAlive;
         if ( typeof Binance.options.localAddress === 'undefined' ) Binance.options.localAddress = default_options.localAddress;
         if ( typeof Binance.options.family === 'undefined' ) Binance.options.family = default_options.family;
+        if ( typeof Binance.options.isolated === 'undefined' ) Binance.options.isolated = default_options.isolated;
         if ( typeof Binance.options.urls !== 'undefined' ) {
             const { urls } = Binance.options;
             if ( typeof urls.base === 'string' ) base = urls.base;
@@ -2094,18 +2096,22 @@ let api = function Binance( options = {} ) {
      * @param {object} data - user data callback data type
      * @return {undefined}
      */
-    const userIsolatedDataHandler = data => {
+    const userIsolatedDataHandler = symbol => data => {
         let type = data.e;
-        if ( type === 'outboundAccountInfo' ) {
-            // XXX: Deprecated in 2020-09-08
-        } else if ( type === 'executionReport' ) {
-            if ( Binance.options.isolated_execution_callback ) Binance.options.isolated_execution_callback( data );
-        } else if ( type === 'listStatus' ) {
-            if ( Binance.options.isolated_list_status_callback ) Binance.options.isolated_list_status_callback( data );
-        } else if ( type === 'outboundAccountPosition' || type === 'balanceUpdate' ) {
-            if ( Binance.options.isolated_balance_callback ) Binance.options.isolated_balance_callback( data );
+        if ( Binance.options.isolated[symbol] ) {
+            if ( type === 'outboundAccountInfo' ) {
+                // XXX: Deprecated in 2020-09-08
+            } else if ( type === 'executionReport' ) {
+                if ( Binance.options.isolated[symbol].execution_callback ) Binance.options.isolated[symbol].execution_callback( data );
+            } else if ( type === 'listStatus' ) {
+                if ( Binance.options.isolated[symbol].list_status_callback ) Binance.options.isolated[symbol].list_status_callback( data );
+            } else if ( type === 'outboundAccountPosition' || type === 'balanceUpdate' ) {
+                if ( Binance.options.isolated[symbol].balance_callback ) Binance.options.isolated[symbol].balance_callback( data );
+            } else {
+                Binance.options.log( 'Unexpected userIsolatedData: ' + type );
+            }
         } else {
-            Binance.options.log( 'Unexpected userIsolatedData: ' + type );
+            Binance.options.log( 'Unexpected isolated symbol: ' + symbol );
         }
     };
 
@@ -5537,11 +5543,12 @@ let api = function Binance( options = {} ) {
                 let reconnect = () => {
                     if ( Binance.options.reconnect ) userIsolatedData( symbol, callback, execution_callback, subscribed_callback );
                 };
+                Binance.options.isolated[symbol] = {}
                 apiRequest( sapi + 'v1/userDataStream/isolated', { symbol }, function ( error, response ) {
-                    Binance.options.listenIsolatedKey = response.listenKey;
+                    Binance.options.isolated[symbol].listenIsolatedKey = response.listenKey;
                     setTimeout( function userDataKeepAlive() { // keepalive
                         try {
-                            apiRequest( sapi + 'v1/userDataStream/isolated?symbol=' + symbol + '&listenKey=' + Binance.options.listenIsolatedKey, {}, function ( err ) {
+                            apiRequest( sapi + 'v1/userDataStream/isolated?symbol=' + symbol + '&listenKey=' + Binance.options.isolated[symbol].listenIsolatedKey, {}, function ( err ) {
                                 if ( err ) setTimeout( userDataKeepAlive, 60000 ); // retry in 1 minute
                                 else setTimeout( userDataKeepAlive, 60 * 30 * 1000 ); // 30 minute keepalive
                             }, 'PUT' );
@@ -5549,10 +5556,10 @@ let api = function Binance( options = {} ) {
                             setTimeout( userDataKeepAlive, 60000 ); // retry in 1 minute
                         }
                     }, 60 * 30 * 1000 ); // 30 minute keepalive
-                    Binance.options.isolated_balance_callback = callback;
-                    Binance.options.isolated_execution_callback = execution_callback;
-                    Binance.options.isolated_list_status_callback = list_status_callback;
-                    const subscription = subscribe( Binance.options.listenIsolatedKey, userIsolatedDataHandler, reconnect );
+                    Binance.options.isolated[symbol].balance_callback = callback;
+                    Binance.options.isolated[symbol].execution_callback = execution_callback;
+                    Binance.options.isolated[symbol].list_status_callback = list_status_callback;
+                    const subscription = subscribe( Binance.options.isolated[symbol].listenIsolatedKey, userIsolatedDataHandler( symbol ), reconnect );
                     if ( subscribed_callback ) subscribed_callback( subscription.endpoint );
                 }, 'POST' );
             },
